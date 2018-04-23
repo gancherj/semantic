@@ -77,8 +77,8 @@ instance Show (Exp tp) where
     show e = ppExp e []
 
 
---a_rel = Const "a.rel" (SetRepr ERepr)
-a_rel = SetLit $ map (\i -> Const i ERepr) ["alice", "bob", "dave"]
+a_rel = Const "a.rel" (SetRepr ERepr)
+--a_rel = SetLit $ map (\i -> Const i ERepr) ["alice", "bob", "dave"]
 dies = Const "dies" (ERepr ==> TRepr)
 sif = 
     Lam (SetRepr TRepr) $ \m ->
@@ -91,21 +91,26 @@ house = Const "house" TRepr
 sent :: Exp (Set T)
 sent = Bind (Bind a_rel $ Lam ERepr $ \x -> SetLit [App dies x]) $ Lam TRepr $ \p -> App (App sif (SetLit [p])) (SetLit [house])
 
+sent2 = Bind a_rel $ Lam ERepr $ \x -> Bind (SetLit [App dies x]) $ Lam TRepr $ \p -> App (App sif (SetLit [p])) (SetLit [house])
 
 
-beta :: Exp t2 -> Exp t2
-beta (App f e) =
-    case beta f of
-      Lam t b -> (b e)
-      _ -> App f (beta e)
-beta e@(Bind s f) =
-    case (beta s, beta f) of
+
+
+simpl :: Exp t2 -> Exp t2
+simpl (App f e) =
+    case simpl f of
+      Lam t b -> simpl (b e)
+      _ -> App (simpl f) (simpl e)
+simpl e@(Bind s f) =
+    case (simpl s, simpl f) of
       (SetLit xs, Lam t b) -> 
-          case (simpSets $ map beta $ map b xs) of
+          case (simpSets $ map simpl $ map b xs) of
             Just ts -> SetLit ts
-            Nothing -> Bind (beta s) (beta f) 
+            Nothing -> Bind (simpl s) (simpl f) 
       (s', f') -> Bind s' f' 
-beta e = e
+simpl (Lam t f) =
+    Lam t (\x -> simpl (f x))
+simpl e = e
 
 
 simpSets :: [Exp (Set t2)] -> Maybe [Exp t2]
