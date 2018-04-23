@@ -96,17 +96,27 @@ sent2 = Bind a_rel $ Lam ERepr $ \x -> Bind (SetLit [App dies x]) $ Lam TRepr $ 
 
 
 
+-- a >>= (\x. b x >>= f)
+-- (a >>= b) >>= f
+
 simpl :: Exp t2 -> Exp t2
 simpl (App f e) =
     case simpl f of
       Lam t b -> simpl (b e)
       _ -> App (simpl f) (simpl e)
 simpl e@(Bind s f) =
-    case (simpl s, simpl f) of
-      (SetLit xs, Lam t b) -> 
+    let s' = simpl s
+        f' = simpl f in
+    case (s', f') of
+      (SetLit xs, Lam t b) -> -- if of form a >>= (\x. b x >>= f), perform substitution
           case (simpSets $ map simpl $ map b xs) of
             Just ts -> SetLit ts
             Nothing -> Bind (simpl s) (simpl f) 
+      (Bind s1 f1, Lam t b) -> -- if of form (a >>= b) >>= f, reassociate and simpl
+          case (typeOf s1) of
+            SetRepr t' ->
+                simpl $ Bind s1 $ Lam t' $ \x -> Bind (App f1 x) (Lam t b)
+
       (s', f') -> Bind s' f' 
 simpl (Lam t f) =
     Lam t (\x -> simpl (f x))
