@@ -7,4 +7,4 @@ import Lang
 main :: IO ()
 main = do
   putStrLn $ ppExp sent []
-  putStrLn $ show $ beta sent
+  putStrLn $ show $ simpl sent

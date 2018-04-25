@@ -1,0 +1,1 @@
+1. In figure 18, we must manually apply \beta^0 to store the antecedent to she. Instead one could imagine a monadic semantics which automatically kept a stack of antecedents which have been introduced.
