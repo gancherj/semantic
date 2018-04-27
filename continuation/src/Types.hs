@@ -30,7 +30,7 @@ instance Show (TyRepr t) where
     show ERepr = "E"
     show TRepr = "T"
     show SRepr = "S"
-    show (ArrowRepr t1 t2) = (show t1) ++ " -> " ++ (show t2)
+    show (ArrowRepr t1 t2) = "(" ++ (show t1) ++ " -> " ++ (show t2) ++ ")"
     show (PairRepr t1 t2) = (show t1) ++ " * " ++ (show t2)
 
 ee = ERepr

@@ -21,15 +21,29 @@ data Exp (tp :: Ty) where
     Const :: String -> TyRepr tp -> Exp tp
     Lam :: KnownTy tp => (Exp tp -> Exp tp2) -> Exp (tp --> tp2)
     App :: Exp (tp --> tp2) -> Exp tp -> Exp tp2
-    Forall :: Exp (E --> T) -> Exp T
-    Exists :: Exp (E --> T) -> Exp T
+    Forall :: KnownTy t => Exp (t --> T) -> Exp T
+    Exists :: KnownTy t => Exp (t --> T) -> Exp T
     And :: Exp T -> Exp T -> Exp T
     Implies :: Exp T -> Exp T -> Exp T
 
-varStream :: [String]
-varStream = baseVars ++ (map (\i -> "x" ++ (show i)) [0,1]) -- TODO I'm not taking advantage of laziness properly
+
+type VarStream = ([String], [String], [String]) -- e and wildcard, s, functions
+varStreams :: VarStream
+varStreams = (baseEVars ++ (map (\i -> "x" ++ (show i)) [0,1]),
+             baseSVars ++ (map (\i -> "x" ++ (show i)) [0,1]),
+             baseFVars ++ (map (\i -> "x" ++ (show i)) [0,1]))
     where
-        baseVars = ["x", "y", "z", "a", "b", "c", "d", "e"]
+        baseEVars = ["x", "y", "z", "a", "b", "c"]
+        baseSVars = ["w", "v", "u"]
+        baseFVars = ["k", "f", "g", "h"]
+
+varStream_filter :: (String -> Bool) -> VarStream -> VarStream
+varStream_filter f (a, b, c) =
+    (filter f a, filter f b, filter f c)
+
+varStream_intersect :: VarStream -> VarStream -> VarStream
+varStream_intersect (x,y,z) (a,b,c) =
+    (intersect x a, intersect y b, intersect z c)
                             
 typeOf :: Exp tp -> TyRepr tp
 typeOf (Var _ t) = t
@@ -50,42 +64,51 @@ typeOf (Forall _) = tt
 typeOf (Exists _) = tt
 typeOf (And _ _) = tt
 
-freshNames :: Exp tp -> [String]
-freshNames (Var x _) = filter (/= x) varStream
-freshNames (Const x _) = filter (/= x) varStream
+freshNames :: Exp tp -> VarStream
+freshNames (Var x _) = varStream_filter (/= x) varStreams
+freshNames (Const x _) = varStream_filter (/= x) varStreams
 freshNames (Lam f) = freshNames $ f (Var "!" knownRepr)
-freshNames (App f e) = intersect (freshNames f) (freshNames e) 
-freshNames (Tup f e) = intersect (freshNames f) (freshNames e) 
+freshNames (App f e) = varStream_intersect (freshNames f) (freshNames e) 
+freshNames (Tup f e) = varStream_intersect (freshNames f) (freshNames e) 
 freshNames (PiL p) = freshNames p
 freshNames (PiR p) = freshNames p
 freshNames (Forall p) = freshNames p
 freshNames (Exists p) = freshNames p
-freshNames (And p p') = intersect (freshNames p) (freshNames p')
-freshNames (Implies p p') = intersect (freshNames p) (freshNames p')
+freshNames (And p p') = varStream_intersect (freshNames p) (freshNames p')
+freshNames (Implies p p') = varStream_intersect (freshNames p) (freshNames p')
 
 
-freshName :: Exp tp -> [String] -> String
-freshName e used = head $ take 1 $ (freshNames e) \\ used
+freshName :: Exp tp -> TyRepr tp2 -> [String] -> String -- fresh name from E, at type T, given that I've also used used
+freshName e t used =
+    let (x,y,z) = varStream_filter (\x -> not $ x `elem` used) (freshNames e) in
+    case t of
+      ArrowRepr _ _ -> head $ take 1 $ z
+      SRepr -> head $ take 1 $ y
+      _ -> head $ take 1 $ x
 
 -- list argument keeps track of names used
+-- TODO make a better printer for this.
 ppExp :: Exp tp -> [String] -> String
 ppExp (Var x _) _ = x
 ppExp (Const x _) _ = x
 ppExp e@(Lam f) used =
     "λ " ++ x  
     -- ++ ": " ++ (show t) 
-    ++ ". " ++ (ppExp (f (Var x knownRepr)) (x : used))
-        where x = freshName e used
+    ++ ". " ++ (ppExp (f (Var x xt)) (x : used))
+        where x = freshName e xt used
+              xt = knownRepr
 ppExp (App f e) used = "(" ++ (ppExp f used) ++ ") (" ++ (ppExp e used) ++ ")"
 ppExp (Tup p1 p2) used = "(" ++ (ppExp p1 used) ++ ", " ++ (ppExp p2 used) ++ ")"
 ppExp (PiL p) used = (ppExp p used) ++ "#1"
 ppExp (PiR p) used = (ppExp p used) ++ "#2"
-ppExp (Forall f) used = "∀" ++ x ++ ". [" ++ (ppExp (simpl $ App f (Var x knownRepr)) (x : used)) ++ "]"
-    where x = freshName f used
-ppExp (Exists f) used = "∃" ++ x ++ ". [" ++ (ppExp (simpl $ App f (Var x knownRepr)) (x : used)) ++ "]"
-    where x = freshName f used
-ppExp (And x y) used = (ppExp x used) ++ " /\\ " ++ (ppExp y used)
-ppExp (Implies x y) used = (ppExp x used) ++ " => " ++ (ppExp y used)
+ppExp (Forall f) used = "∀" ++ x ++ ". [" ++ (ppExp (simpl $ App f (Var x xt)) (x : used)) ++ "]"
+    where x = freshName f xt used
+          xt = knownRepr
+ppExp (Exists f) used = "∃" ++ x ++ ". [" ++ (ppExp (simpl $ App f (Var x xt)) (x : used)) ++ "]"
+    where x = freshName f xt used
+          xt = knownRepr
+ppExp (And x y) used = "(" ++ (ppExp x used) ++ " /\\ " ++ (ppExp y used) ++ ")"
+ppExp (Implies x y) used = "(" ++ (ppExp x used) ++ " => " ++ (ppExp y used) ++ ")"
 
 type family Conv t where
     Conv (Exp tp) = tp
@@ -143,8 +166,8 @@ type N r s a = ContT (Exp r) (Reader (Exp s)) (Exp a)
 type O a = ContT (Exp T) (ReaderT (Exp S) (State ([Exp E]))) (Exp a)
              
 class LiftQuant m where
-    liftForall :: (Exp E -> m (Exp T)) -> m (Exp T)
-    liftExists :: (Exp E -> m (Exp T)) -> m (Exp T)
+    liftForall :: KnownTy t => (Exp t -> m (Exp T)) -> m (Exp T)
+    liftExists :: KnownTy t => (Exp t -> m (Exp T)) -> m (Exp T)
     
 
 instance LiftQuant Identity where
@@ -187,7 +210,9 @@ simpl (Implies x y) =
     Implies (simpl x) (simpl y)
 simpl e = e
 
-
+print_lower :: N T S T -> String
+print_lower e = 
+    show $ simpl $ toExp $ runContT e return 
 
 
 
