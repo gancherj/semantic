@@ -33,9 +33,9 @@ instance Show (TyRepr t) where
     show (ArrowRepr t1 t2) = (show t1) ++ " -> " ++ (show t2)
     show (PairRepr t1 t2) = (show t1) ++ " * " ++ (show t2)
 
-e = ERepr
-t = TRepr
-s = SRepr
+ee = ERepr
+tt = TRepr
+ss = SRepr
 
 infixr 1 ==>
 (==>) = ArrowRepr

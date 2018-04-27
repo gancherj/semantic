@@ -11,8 +11,6 @@ import Data.List
 import System.IO.Unsafe
 import Types
 
-tr s = unsafePerformIO $ putStrLn s
-
 
 data Exp (tp :: Ty) where
     -- only for printing
@@ -23,6 +21,10 @@ data Exp (tp :: Ty) where
     Const :: String -> TyRepr tp -> Exp tp
     Lam :: KnownTy tp => (Exp tp -> Exp tp2) -> Exp (tp --> tp2)
     App :: Exp (tp --> tp2) -> Exp tp -> Exp tp2
+    Forall :: Exp (E --> T) -> Exp T
+    Exists :: Exp (E --> T) -> Exp T
+    And :: Exp T -> Exp T -> Exp T
+    Implies :: Exp T -> Exp T -> Exp T
 
 varStream :: [String]
 varStream = baseVars ++ (map (\i -> "x" ++ (show i)) [0,1]) -- TODO I'm not taking advantage of laziness properly
@@ -44,6 +46,9 @@ typeOf (PiL p) =
 typeOf (PiR p) =
     case typeOf p of
       PairRepr _ t -> t
+typeOf (Forall _) = tt
+typeOf (Exists _) = tt
+typeOf (And _ _) = tt
 
 freshNames :: Exp tp -> [String]
 freshNames (Var x _) = filter (/= x) varStream
@@ -53,6 +58,10 @@ freshNames (App f e) = intersect (freshNames f) (freshNames e)
 freshNames (Tup f e) = intersect (freshNames f) (freshNames e) 
 freshNames (PiL p) = freshNames p
 freshNames (PiR p) = freshNames p
+freshNames (Forall p) = freshNames p
+freshNames (Exists p) = freshNames p
+freshNames (And p p') = intersect (freshNames p) (freshNames p')
+freshNames (Implies p p') = intersect (freshNames p) (freshNames p')
 
 
 freshName :: Exp tp -> [String] -> String
@@ -63,7 +72,7 @@ ppExp :: Exp tp -> [String] -> String
 ppExp (Var x _) _ = x
 ppExp (Const x _) _ = x
 ppExp e@(Lam f) used =
-    "λ " ++ (ppExp (Var x t) used) 
+    "λ " ++ x  
     -- ++ ": " ++ (show t) 
     ++ ". " ++ (ppExp (f (Var x knownRepr)) (x : used))
         where x = freshName e used
@@ -71,6 +80,12 @@ ppExp (App f e) used = "(" ++ (ppExp f used) ++ ") (" ++ (ppExp e used) ++ ")"
 ppExp (Tup p1 p2) used = "(" ++ (ppExp p1 used) ++ ", " ++ (ppExp p2 used) ++ ")"
 ppExp (PiL p) used = (ppExp p used) ++ "#1"
 ppExp (PiR p) used = (ppExp p used) ++ "#2"
+ppExp (Forall f) used = "∀" ++ x ++ ". [" ++ (ppExp (simpl $ App f (Var x knownRepr)) (x : used)) ++ "]"
+    where x = freshName f used
+ppExp (Exists f) used = "∃" ++ x ++ ". [" ++ (ppExp (simpl $ App f (Var x knownRepr)) (x : used)) ++ "]"
+    where x = freshName f used
+ppExp (And x y) used = (ppExp x used) ++ " /\\ " ++ (ppExp y used)
+ppExp (Implies x y) used = (ppExp x used) ++ " => " ++ (ppExp y used)
 
 type family Conv t where
     Conv (Exp tp) = tp
@@ -127,51 +142,35 @@ type M r s a = ReaderT (Exp s) (Cont (Exp r)) (Exp a)
 type N r s a = ContT (Exp r) (Reader (Exp s)) (Exp a)
 type O a = ContT (Exp T) (ReaderT (Exp S) (State ([Exp E]))) (Exp a)
              
+class LiftQuant m where
+    liftForall :: (Exp E -> m (Exp T)) -> m (Exp T)
+    liftExists :: (Exp E -> m (Exp T)) -> m (Exp T)
+    
 
-everyone' = Const "everyone" ((e ==> t) ==> t)
+instance LiftQuant Identity where
+    liftForall f =
+        return $ Forall $ Lam $ \e -> runIdentity (f e)
+    liftExists f =
+        return $ Exists $ Lam $ \e -> runIdentity (f e)
 
-ieveryone_ :: (Exp E -> Identity (Exp T)) -> Reader (Exp S) (Exp T)
-ieveryone_ = fromExp $ Const "everyone" knownRepr
+instance (LiftQuant m, Monad m) => LiftQuant (ReaderT (Exp S) m) where
+    liftForall f = do
+        s <- ask
+        lift $ liftForall $ \e -> runReaderT (f e) s
 
-ieveryone :: KnownM m T => (Exp E -> m (Exp T)) -> m (Exp T)
-ieveryone = fromExp $ Const "everyone" knownRepr
+    liftExists f = do
+        s <- ask
+        lift $ liftExists $ \e -> runReaderT (f e) s
 
--- continuation is not intensional
-everyone :: M T S E
-everyone = do
-    s <- ask
-    lift $ ContT $ \f ->
-        return $ runReader (ieveryone_ f) s
-
--- continuation is intensional
-everyone2 :: N T S E
-everyone2 = do
-    s <- ask
-    ContT $ \f ->
-        return $ runReader (ieveryone f) s
-
-
-left = \e -> App (Const "left" (ERepr ==> TRepr)) e
-
-john = Const "john" ERepr
-
-everyone_left :: M T S T
-everyone_left = do
-    e <- everyone
-    l <- return left
-    return $ l e
-
-everyone_left2 :: N T S T
-everyone_left2 = do
-    e <- everyone2
-    l <- return left
-    return $ l e
-
-
-
-
-
-
+instance (LiftQuant m) => LiftQuant (ContT (Exp T) m) where
+    liftForall f = 
+        ContT $ \g -> 
+            liftForall $ \e ->
+                runContT (f e) g
+    liftExists f = 
+        ContT $ \g -> 
+            liftExists $ \e ->
+                runContT (f e) g
 
 simpl :: Exp t2 -> Exp t2
 simpl (App f e) =
@@ -180,41 +179,24 @@ simpl (App f e) =
       _ -> App (simpl f) (simpl e)
 simpl (Lam f) =
     Lam  (\x -> simpl (f x))
+simpl (Forall f) =
+    Forall (simpl f)
+simpl (And x y) =
+    And (simpl x) (simpl y)
+simpl (Implies x y) =
+    Implies (simpl x) (simpl y)
 simpl e = e
 
 
 
 
 
+        
 
 {-
-   manual continuation combinators
+    to encode:
+    quantification
+    believe / know / wonder / admire
+    intensionality
+    -}
 
-sent = kap2 everyone' (kret left')
-
-type M a b c = ((c --> b) --> a)
-mRepr a b c = ((c ==> b) ==> a)
-
-kbind :: (KnownTy e1, KnownTy e2, KnownTy c) => Exp (M a b e1) -> (Exp (e1 --> M b c e2)) -> Exp (M a c e2)
-kbind m f =
-    Lam $ \k -> App m (Lam $ \x -> App (App f x) k)
-
-klower :: (KnownTy a) => Exp (M e a a) -> Exp e
-klower m = App m (Lam $ \x -> x)
-
-kret :: (KnownTy e, KnownTy a) => Exp e -> Exp (M a a e)
-kret e = Lam $ \k -> App k e
-
--- combl
-kap :: (KnownTy e1, KnownTy e2, KnownTy c) => Exp (M a b (e1 --> e2)) -> Exp (M b c e1) -> Exp (M a c e2)
-kap mf ma =
-    kbind mf (Lam $ \f ->
-        kbind ma (Lam $ \a -> 
-            kret (App f a)))
-
--- combr
-kap2 :: (KnownTy a, KnownTy b, KnownTy e) => Exp (M c d a) -> Exp (M d e (a --> b)) -> Exp (M c e b)
-kap2 ma mf =
-    Lam $ \k ->
-        App ma (Lam $ \x -> App mf (Lam $ \g -> App k (App g x)))
-        -}
