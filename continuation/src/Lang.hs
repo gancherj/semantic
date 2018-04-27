@@ -96,7 +96,6 @@ instance (ToExp t, ToExp t2) => ToExp (t,t2) where
     toExp p = Tup (toExp $ fst p) (toExp $ snd p)
     fromExp p = (fromExp $ (PiL p), fromExp $ (PiR p))
        
-
 instance ToExp t => ToExp (Identity t) where
     toExp t = toExp $ runIdentity t
     fromExp t = return $ fromExp t
@@ -109,7 +108,6 @@ instance (ToExp t, KnownTy tp, ToExp (m t)) => ToExp (ReaderT (Exp tp) m t) wher
     toExp ma = toExp $ runReaderT ma
     fromExp r = ReaderT $ \s -> fromExp $ App r s
 
-
 instance (ToExp t, KnownTy tp, ToExp (m (t, Exp tp))) => ToExp (StateT (Exp tp) m t) where
     toExp ma = toExp $ runStateT ma
     fromExp r = StateT $ \s -> fromExp $ App r s
@@ -118,24 +116,39 @@ instance (KnownTy tp, ToExp t, ToExp (m (Exp tp)), KnownTy (Conv t), KnownTy (Co
     toExp ma = toExp $ runContT ma
     fromExp r = ContT $ \f -> fromExp $ App r (toExp f)
 
+type KnownM m t = (ToExp (m (Exp t)), KnownTy (Conv (m (Exp t))))
 
+he :: MonadState ([Exp E]) m => Int -> m (Exp E)
+he i = do
+    ls <- get
+    return $ ls !! i
 
 type M r s a = ReaderT (Exp s) (Cont (Exp r)) (Exp a)
 type N r s a = ContT (Exp r) (Reader (Exp s)) (Exp a)
+type O a = ContT (Exp T) (ReaderT (Exp S) (State ([Exp E]))) (Exp a)
              
 
 everyone' = Const "everyone" ((e ==> t) ==> t)
-ieveryone = Const "everyone" ((e ==> s ==> t) ==> t)
 
+ieveryone_ :: (Exp E -> Identity (Exp T)) -> Reader (Exp S) (Exp T)
+ieveryone_ = fromExp $ Const "everyone" knownRepr
+
+ieveryone :: KnownM m T => (Exp E -> m (Exp T)) -> m (Exp T)
+ieveryone = fromExp $ Const "everyone" knownRepr
+
+-- continuation is not intensional
 everyone :: M T S E
 everyone = do
+    s <- ask
     lift $ ContT $ \f ->
-        return $ App everyone' (toExp f)
+        return $ runReader (ieveryone_ f) s
 
+-- continuation is intensional
 everyone2 :: N T S E
 everyone2 = do
+    s <- ask
     ContT $ \f ->
-        return $ App ieveryone (toExp f)
+        return $ runReader (ieveryone f) s
 
 
 left = \e -> App (Const "left" (ERepr ==> TRepr)) e
