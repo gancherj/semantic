@@ -69,11 +69,17 @@ admire :: N T S (E --> E --> T)
 admire =
     (App (Const "admire" knownRepr)) <$> curWorld
 
+asleep :: N T S (E --> T)
+asleep =
+    (App (Const "asleep" knownRepr)) <$> curWorld
+
 
 left :: N T S (E --> T)
 left = 
     (App (Const "left" knownRepr)) <$> curWorld
 
+to_be :: N T S T -> N T S T
+to_be = id
 
 john :: N T S E
 john = 
@@ -82,6 +88,10 @@ john =
 everyone_left :: N T S T
 everyone_left = 
     (fromExp <$> left) <*> everyone
+
+john_wanted_john_to_be_asleep :: N T S T
+john_wanted_john_to_be_asleep =  want john (asleep  <**> john)
+    
 
 john_left :: N T S T
 john_left =
