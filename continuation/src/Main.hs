@@ -6,5 +6,6 @@ import Lang
   
 main :: IO ()
 main = do
-  putStrLn $ ppExp sent []
-  putStrLn $ show $ simpl sent
+
+  putStrLn $ show $ simpl $ toExp everyone_left
+  putStrLn $ show $ simpl $ toExp everyone_left2

@@ -22,4 +22,4 @@ executable ling
                        parameterized-utils,
                        mtl
 
-  default-extensions: FlexibleInstances, GADTs, GeneralizedNewtypeDeriving, KindSignatures, TemplateHaskell, TypeOperators, TypeSynonymInstances, MultiParamTypeClasses, FunctionalDependencies, ScopedTypeVariables, UndecidableInstances, ConstraintKinds, DataKinds, PolyKinds, EmptyDataDecls, TypeFamilies, RankNTypes, ExistentialQuantification, FlexibleContexts, StandaloneDeriving, DeriveAnyClass, DeriveDataTypeable, TypeFamilyDependencies 
+  default-extensions: FlexibleInstances, GADTs, GeneralizedNewtypeDeriving, KindSignatures, TemplateHaskell, TypeOperators, TypeSynonymInstances, MultiParamTypeClasses, FunctionalDependencies, ScopedTypeVariables, UndecidableInstances, ConstraintKinds, DataKinds, PolyKinds, EmptyDataDecls, TypeFamilies, RankNTypes, ExistentialQuantification, FlexibleContexts, StandaloneDeriving, DeriveAnyClass, DeriveDataTypeable, TypeFamilyDependencies, AllowAmbiguousTypes
