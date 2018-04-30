@@ -1,3 +1,7 @@
+-- NOTE: The strategy of lifting applicatives does NOT work as expected. They really need to be monads.
+-- For this approach to be sound, I need to verify that Cont (Reader (State)) really is a monad.
+--
+--
 module Lang where
 
 import Control.Monad.Reader
@@ -25,6 +29,10 @@ data Exp (tp :: Ty) where
     Exists :: KnownTy t => Exp (t --> T) -> Exp T
     And :: Exp T -> Exp T -> Exp T
     Implies :: Exp T -> Exp T -> Exp T
+
+    EmptyAssign :: Exp G
+    Push :: Exp E -> Exp G -> Exp G
+    Get :: Int -> Exp G -> Exp E
 
 
 type VarStream = ([String], [String], [String]) -- e and wildcard, s, functions
@@ -63,6 +71,9 @@ typeOf (PiR p) =
 typeOf (Forall _) = tt
 typeOf (Exists _) = tt
 typeOf (And _ _) = tt
+typeOf (EmptyAssign) = gg
+typeOf (Push _ _) = gg
+typeOf (Get _ _) = ee
 
 freshNames :: Exp tp -> VarStream
 freshNames (Var x _) = varStream_filter (/= x) varStreams
@@ -76,6 +87,9 @@ freshNames (Forall p) = freshNames p
 freshNames (Exists p) = freshNames p
 freshNames (And p p') = varStream_intersect (freshNames p) (freshNames p')
 freshNames (Implies p p') = varStream_intersect (freshNames p) (freshNames p')
+freshNames (EmptyAssign) = varStreams
+freshNames (Push p p') = varStream_intersect (freshNames p) (freshNames p')
+freshNames (Get _ p) = freshNames p
 
 
 freshName :: Exp tp -> TyRepr tp2 -> [String] -> String -- fresh name from E, at type T, given that I've also used used
@@ -109,6 +123,9 @@ ppExp (Exists f) used = "∃" ++ x ++ ". [" ++ (ppExp (simpl $ App f (Var x xt))
           xt = knownRepr
 ppExp (And x y) used = "(" ++ (ppExp x used) ++ " /\\ " ++ (ppExp y used) ++ ")"
 ppExp (Implies x y) used = "(" ++ (ppExp x used) ++ " => " ++ (ppExp y used) ++ ")"
+ppExp (EmptyAssign) used = "g"
+ppExp (Push e g) used = "(" ++ (ppExp e used) ++ ": " ++ (ppExp g used) ++ ")"
+ppExp (Get i g) used = (ppExp g used) ++ "[" ++ (show i) ++ "]"
 
 type family Conv t where
     Conv (Exp tp) = tp
@@ -161,39 +178,58 @@ he i = do
     ls <- get
     return $ ls !! i
 
-type M r s a = ReaderT (Exp s) (Cont (Exp r)) (Exp a)
-type N r s a = ContT (Exp r) (Reader (Exp s)) (Exp a)
-type O a = ContT (Exp T) (ReaderT (Exp S) (State ([Exp E]))) (Exp a)
+type M a = ContT (Exp T) (ReaderT (Exp S) (State (Exp G))) (Exp a)
              
 class LiftQuant m where
-    liftForall :: KnownTy t => (Exp t -> m (Exp T)) -> m (Exp T)
-    liftExists :: KnownTy t => (Exp t -> m (Exp T)) -> m (Exp T)
+    liftForall :: KnownTy t => TyRepr t -> (Exp t -> m (Exp T)) -> m (Exp T)
+    liftExists :: KnownTy t => TyRepr t -> (Exp t -> m (Exp T)) -> m (Exp T)
     
 
 instance LiftQuant Identity where
-    liftForall f =
+    liftForall _ f =
         return $ Forall $ Lam $ \e -> runIdentity (f e)
-    liftExists f =
+    liftExists _ f =
         return $ Exists $ Lam $ \e -> runIdentity (f e)
 
 instance (LiftQuant m, Monad m) => LiftQuant (ReaderT (Exp S) m) where
-    liftForall f = do
+    liftForall t f = do
         s <- ask
-        lift $ liftForall $ \e -> runReaderT (f e) s
+        lift $ liftForall t $ \e -> runReaderT (f e) s
 
-    liftExists f = do
+    liftExists t f = do
         s <- ask
-        lift $ liftExists $ \e -> runReaderT (f e) s
+        lift $ liftExists t $ \e -> runReaderT (f e) s
+
+instance (LiftQuant m, Monad m) => LiftQuant (StateT (Exp G) m) where
+    liftForall t f = do
+        s <- get
+
+        lift $ liftForall t $ \e -> do
+            evalStateT (f e) s
+
+    liftExists t f = do
+        s <- get
+
+        lift $ liftExists t $ \e -> do
+            evalStateT (f e) s
+
+
 
 instance (LiftQuant m) => LiftQuant (ContT (Exp T) m) where
-    liftForall f = 
+    liftForall t f = 
         ContT $ \g -> 
-            liftForall $ \e ->
+            liftForall t $ \e ->
                 runContT (f e) g
-    liftExists f = 
+    liftExists t f = 
         ContT $ \g -> 
-            liftExists $ \e ->
+            liftExists t $ \e ->
                 runContT (f e) g
+
+evalGet :: Int -> Exp G -> Maybe (Exp E)
+evalGet _ EmptyAssign = Nothing
+evalGet 0 (Push e _) = Just e
+evalGet i (Push _ g) = evalGet (i - 1) g
+
 
 simpl :: Exp t2 -> Exp t2
 simpl (App f e) =
@@ -208,9 +244,14 @@ simpl (And x y) =
     And (simpl x) (simpl y)
 simpl (Implies x y) =
     Implies (simpl x) (simpl y)
+simpl (Get i g) =
+    case (evalGet i g) of
+      Just e -> e
+      Nothing -> Get i g
+
 simpl e = e
 
-print_lower :: N T S T -> String
+print_lower :: M T -> String
 print_lower e = 
     show $ simpl $ toExp $ runContT e return 
 

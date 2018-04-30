@@ -37,6 +37,7 @@ main = do
   putStrLn "john wonders if everyone admires someone: "
   putStrLn $ print_lower john_wonders_if_everyone_admires_someone
 
+  -- TODO This doesn't expose john as a referent correctly
   putStrLn "john wanted john to be asleep: "
   putStrLn $ print_lower john_wanted_john_to_be_asleep
 
