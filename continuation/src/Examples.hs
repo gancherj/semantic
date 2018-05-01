@@ -24,6 +24,20 @@ he i = do
     g <- get
     return $ Get i g
 
+his :: Int -> (M E -> M E) -> M E
+his i f = do
+    g <- get
+    f (return $ Get i g)
+
+mother :: M E -> M E
+mother x =
+    ((App (Const "mother" knownRepr)) <$> curWorld) <**> x
+
+called :: M E -> M E -> M T
+called x y =
+    ((App (Const "called" knownRepr)) <$> curWorld) <**> x <**> y
+
+
 push :: MonadState (Exp G) m => Exp E -> m ()
 push e = do
     g <- get
@@ -125,6 +139,7 @@ mkE s = do
     return j
 
 john = mkE "john"
+bill = mkE "bill"
 keisha = mkE "keisha"
 
 everyone_left :: M T
@@ -193,3 +208,6 @@ disj_sent :: M T
 disj_sent =
     admire (disj john keisha) someone
 
+disj_sent2 :: M T
+disj_sent2 =
+    called (disj john bill) (his 0 mother)
