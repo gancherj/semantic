@@ -40,13 +40,6 @@ every = do
         w <- ask
         return $ Forall $ Lam $ \e -> evalState (runReaderT (k e) w) s
 
-combres :: Monad m => ContT (Exp T) m a -> (a -> m (Exp T)) -> (Exp T -> Exp T -> Exp T) -> ContT (Exp T) m a
-combres me mf comb =
-    ContT $ \f ->
-        runContT me $ \e -> do
-            liftM2 comb (mf e) (f e)
-
-
 everyone :: M E
 everyone = 
     ContT $ \k -> do
@@ -101,7 +94,7 @@ someone =
         w <- ask
         let t1 e = evalState (runReaderT (k e) w) s
             t2 e = runM w s (person (return e)) return
-        return $ Exists $ Lam $ \e -> Implies (t2 e) (t1 e)
+        return $ Exists $ Lam $ \e -> And (t2 e) (t1 e)
 
 admire :: M E -> M E -> M T
 admire x y =
