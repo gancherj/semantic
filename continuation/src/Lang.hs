@@ -15,6 +15,9 @@ import Data.List
 import System.IO.Unsafe
 import Types
 
+tr s =
+    unsafePerformIO $ putStrLn s
+
 
 data Exp (tp :: Ty) where
     -- only for printing
@@ -173,57 +176,12 @@ instance (KnownTy tp, ToExp t, ToExp (m (Exp tp)), KnownTy (Conv t), KnownTy (Co
 
 type KnownM m t = (ToExp (m (Exp t)), KnownTy (Conv (m (Exp t))))
 
-he :: MonadState ([Exp E]) m => Int -> m (Exp E)
-he i = do
-    ls <- get
-    return $ ls !! i
-
 type M a = ContT (Exp T) (ReaderT (Exp S) (State (Exp G))) (Exp a)
+
+runM :: Exp S -> Exp G -> M a -> (Exp a -> ReaderT (Exp S) (State (Exp G)) (Exp T)) -> Exp T
+runM w g m k =
+    evalState (runReaderT (runContT m k) w) g
              
-class LiftQuant m where
-    liftForall :: KnownTy t => TyRepr t -> (Exp t -> m (Exp T)) -> m (Exp T)
-    liftExists :: KnownTy t => TyRepr t -> (Exp t -> m (Exp T)) -> m (Exp T)
-    
-
-instance LiftQuant Identity where
-    liftForall _ f =
-        return $ Forall $ Lam $ \e -> runIdentity (f e)
-    liftExists _ f =
-        return $ Exists $ Lam $ \e -> runIdentity (f e)
-
-instance (LiftQuant m, Monad m) => LiftQuant (ReaderT (Exp S) m) where
-    liftForall t f = do
-        s <- ask
-        lift $ liftForall t $ \e -> runReaderT (f e) s
-
-    liftExists t f = do
-        s <- ask
-        lift $ liftExists t $ \e -> runReaderT (f e) s
-
-instance (LiftQuant m, Monad m) => LiftQuant (StateT (Exp G) m) where
-    liftForall t f = do
-        s <- get
-
-        lift $ liftForall t $ \e -> do
-            evalStateT (f e) s
-
-    liftExists t f = do
-        s <- get
-
-        lift $ liftExists t $ \e -> do
-            evalStateT (f e) s
-
-
-
-instance (LiftQuant m) => LiftQuant (ContT (Exp T) m) where
-    liftForall t f = 
-        ContT $ \g -> 
-            liftForall t $ \e ->
-                runContT (f e) g
-    liftExists t f = 
-        ContT $ \g -> 
-            liftExists t $ \e ->
-                runContT (f e) g
 
 evalGet :: Int -> Exp G -> Maybe (Exp E)
 evalGet _ EmptyAssign = Nothing
@@ -234,7 +192,7 @@ evalGet i (Push _ g) = evalGet (i - 1) g
 simpl :: Exp t2 -> Exp t2
 simpl (App f e) =
     case simpl f of
-      Lam b -> simpl (b e)
+      Lam b -> simpl (b (simpl e))
       _ -> App (simpl f) (simpl e)
 simpl (Lam f) =
     Lam  (\x -> simpl (f x))
@@ -246,14 +204,26 @@ simpl (Implies x y) =
     Implies (simpl x) (simpl y)
 simpl (Get i g) =
     case (evalGet i g) of
-      Just e -> e
+      Just e -> simpl e
       Nothing -> Get i g
+simpl (Tup x y) = Tup (simpl x) (simpl y)
+simpl (PiL t) =
+    case simpl t of
+      Tup x _ -> simpl x
+      _ -> PiL $ simpl t
+simpl (PiR t) =
+    case simpl t of
+      Tup _ y -> simpl y
+      _ -> PiR $ simpl t
 
 simpl e = e
 
 print_lower :: M T -> String
 print_lower e = 
-    show $ simpl $ toExp $ runContT e return 
+    show $ simpl $
+        
+        Lam $ \w ->
+            App (App (toExp $ runContT e return ) w) EmptyAssign
 
 
 

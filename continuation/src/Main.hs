@@ -41,3 +41,6 @@ main = do
   putStrLn "john wanted john to be asleep: "
   putStrLn $ print_lower john_wanted_john_to_be_asleep
 
+  putStrLn "john wanted john to be asleep and he is asleep"
+  putStrLn $ print_lower conj_sent
+

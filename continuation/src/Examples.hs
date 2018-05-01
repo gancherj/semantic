@@ -29,13 +29,16 @@ push e = do
     g <- get
     put $ Push e g
 
-person :: MonadReader (Exp S) m => m (Exp (E --> T))
-person = do
-    (App (Const "person" knownRepr)) <$> curWorld
+person :: M E -> M T
+person mx = do
+    ((App (Const "person" knownRepr)) <$> curWorld) <**> mx
 
 every :: M E
-every = ContT $ liftForall knownRepr
-
+every = do
+    ContT $ \k -> do
+        s <- get
+        w <- ask
+        return $ Forall $ Lam $ \e -> evalState (runReaderT (k e) w) s
 
 combres :: Monad m => ContT (Exp T) m a -> (a -> m (Exp T)) -> (Exp T -> Exp T -> Exp T) -> ContT (Exp T) m a
 combres me mf comb =
@@ -43,56 +46,75 @@ combres me mf comb =
         runContT me $ \e -> do
             liftM2 comb (mf e) (f e)
 
+
+everyone :: M E
+everyone = 
+    ContT $ \k -> do
+        s <- get
+        w <- ask
+        let t1 e = evalState (runReaderT (k e) w) s
+            t2 e = runM w s (person (return e)) return
+        return $ Forall $ Lam $ \e -> Implies (t2 e) (t1 e)
+
+
+
 substWorld :: M a -> Exp S -> M a
 substWorld m w = 
     ContT $ \f -> 
         ReaderT $ \_ ->
             runReaderT (runContT m f) w
 
--- TODO: Have the verb be a haskell function. Descend the forall to be only the part that quantifies over s.
---
---
-
 
 bdi :: M (S --> E --> S --> T) -> M E -> M T -> M T
 bdi m mx t = do
+    f <- m
     x <- mx 
-    liftForall knownRepr $ \v -> do
-        liftM2 Implies
-          (m <**> curWorld <**> (return x) <**> (return v))
-          (substWorld t v)
+    ContT $ \k -> do
+        g <- get
+        w <- ask
+        return $ Forall $ Lam $ \v ->
+            Implies (App (App (App f w) x) v)
+                    (runM v g t k)
+                    
+                    
 
 believe = bdi (return (Const "believe" knownRepr))
 know = bdi (return (Const "know" knownRepr))
-want = bdi (return (Const "want" knownRepr))
+want = bdi (return $ Const "want" knownRepr) 
 desire = bdi (return (Const "desire" knownRepr))
 
 wonders_if :: M E -> M T -> M T
 wonders_if x t =
     want x (know x t)
 
-everyone :: M E
-everyone = 
-    combres every (\e -> person <**> (return e)) Implies
-
 some :: M E
-some = ContT $ liftExists knownRepr
+some = do
+    ContT $ \k -> do
+        s <- get
+        w <- ask
+        return $ Exists $ Lam $ \e -> evalState (runReaderT (k e) w) s
 
 someone :: M E
-someone = combres some (\e -> person <**> (return e)) And
+someone = 
+    ContT $ \k -> do
+        s <- get
+        w <- ask
+        let t1 e = evalState (runReaderT (k e) w) s
+            t2 e = runM w s (person (return e)) return
+        return $ Exists $ Lam $ \e -> Implies (t2 e) (t1 e)
 
-admire :: M (E --> E --> T)
-admire =
-    (App (Const "admire" knownRepr)) <$> curWorld
+admire :: M E -> M E -> M T
+admire x y =
+    ((App (Const "admire" knownRepr)) <$> curWorld) <**> x <**> y
 
-asleep :: M (E --> T)
-asleep =
-    (App (Const "asleep" knownRepr)) <$> curWorld
+asleep :: M E -> M T
+asleep x =
+    ((App (Const "asleep" knownRepr)) <$> curWorld) <**> x
 
 
-left :: M (E --> T)
-left = 
-    (App (Const "left" knownRepr)) <$> curWorld
+left :: M E -> M T
+left x = 
+    ((App (Const "left" knownRepr)) <$> curWorld) <**> x
 
 to_be :: M T -> M T
 to_be = id
@@ -106,40 +128,57 @@ john = do
 
 everyone_left :: M T
 everyone_left = 
-    (fromExp <$> left) <*> everyone
+    left everyone
 
 john_wanted_john_to_be_asleep :: M T
-john_wanted_john_to_be_asleep =  want john (asleep  <**> john)
+john_wanted_john_to_be_asleep =  want john (asleep john)
     
 
 john_left :: M T
 john_left =
-    (fromExp <$> left) <*> john
+    left john
 
 john_admires_everyone :: M T
 john_admires_everyone =
-    admire <**> john <**> everyone
+    admire john everyone
 
 everyone_admires_everyone :: M T
 everyone_admires_everyone =
-    admire <**> everyone <**> everyone
+    admire everyone everyone
 
 someone_admires_everyone :: M T
 someone_admires_everyone =
-    admire <**> someone <**> everyone
+    admire someone everyone
 
 everyone_admires_someone :: M T
 everyone_admires_someone =
-    admire <**> everyone <**> someone
+    admire everyone someone
 
 someone_admires_someone :: M T
 someone_admires_someone =
-    admire <**> someone <**> someone
+    admire someone someone
 
 john_wonders_if_everyone_admires_someone :: M T
 john_wonders_if_everyone_admires_someone =
-    wonders_if john $ admire <**> everyone <**> someone
+    wonders_if john $ admire everyone someone
 
 john_wonders_if_true :: M T
 john_wonders_if_true =
     wonders_if john truth
+
+he_is_asleep :: M T
+he_is_asleep =
+    asleep (he 0)
+
+andSeq :: M T -> M T -> M T
+andSeq t1 t2 =
+    ContT $ \k -> do
+        t1 <- runContT t1 k
+        t2 <- runContT t2 k
+        return $ And t1 t2
+
+
+conj_sent :: M T
+conj_sent = 
+    andSeq john_wanted_john_to_be_asleep he_is_asleep
+
