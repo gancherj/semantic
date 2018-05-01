@@ -46,5 +46,8 @@ main = do
   putStrLn "john or keisha admires someone"
   putStrLn $ print_lower disj_sent
 
+  putStrLn "someone is such that john or keisha admires them"
+  putStrLn $ print_lower disj_sent3
+
   putStrLn "john or bill called his mother"
   putStrLn $ print_lower disj_sent2

@@ -200,6 +200,11 @@ disj t1 t2 =
         t2 <- runContT t2 k
         return $ Or t1 t2
 
+is_such_that :: M a -> (M a -> M T) -> M T
+is_such_that ma f = do
+    x <- ma
+    f (return x)
+
 conj_sent :: M T
 conj_sent = 
     conj john_wanted_john_to_be_asleep he_is_asleep
@@ -207,6 +212,10 @@ conj_sent =
 disj_sent :: M T
 disj_sent =
     admire (disj john keisha) someone
+
+disj_sent3 :: M T
+disj_sent3 =
+    is_such_that someone $ admire (disj john keisha)
 
 disj_sent2 :: M T
 disj_sent2 =
