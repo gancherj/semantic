@@ -49,6 +49,11 @@ everyone =
             t2 e = runM w s (person (return e)) return
         return $ Forall $ Lam $ \e -> Implies (t2 e) (t1 e)
 
+noone :: M E
+noone =
+    ContT $ \k -> do
+        t <- runContT someone k
+        return $ Not t
 
 
 substWorld :: M a -> Exp S -> M a
@@ -112,12 +117,15 @@ left x =
 to_be :: M T -> M T
 to_be = id
 
-john :: M E
-john = do 
+mkE :: String -> M E
+mkE s = do
     w <- curWorld
-    let j = App (Const "john" (ss ==> ee)) w
+    let j = App (Const s (ss ==> ee)) w
     push j
     return j
+
+john = mkE "john"
+keisha = mkE "keisha"
 
 everyone_left :: M T
 everyone_left = 
@@ -163,15 +171,25 @@ he_is_asleep :: M T
 he_is_asleep =
     asleep (he 0)
 
-andSeq :: M T -> M T -> M T
-andSeq t1 t2 =
+conj :: M a -> M a -> M a
+conj t1 t2 =
     ContT $ \k -> do
         t1 <- runContT t1 k
         t2 <- runContT t2 k
         return $ And t1 t2
 
+disj :: M a -> M a -> M a
+disj t1 t2 =
+    ContT $ \k -> do
+        t1 <- runContT t1 k
+        t2 <- runContT t2 k
+        return $ Or t1 t2
 
 conj_sent :: M T
 conj_sent = 
-    andSeq john_wanted_john_to_be_asleep he_is_asleep
+    conj john_wanted_john_to_be_asleep he_is_asleep
+
+disj_sent :: M T
+disj_sent =
+    admire (disj john keisha) someone
 

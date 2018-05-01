@@ -33,7 +33,6 @@ main = do
   putStrLn $ print_lower john_wonders_if_true
 
 
-  -- TODO is this the correct reading? 
   putStrLn "john wonders if everyone admires someone: "
   putStrLn $ print_lower john_wonders_if_everyone_admires_someone
 
@@ -44,3 +43,5 @@ main = do
   putStrLn "john wanted john to be asleep and he is asleep"
   putStrLn $ print_lower conj_sent
 
+  putStrLn "john or keisha admires someone"
+  putStrLn $ print_lower disj_sent

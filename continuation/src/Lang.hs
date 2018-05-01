@@ -30,7 +30,9 @@ data Exp (tp :: Ty) where
     App :: Exp (tp --> tp2) -> Exp tp -> Exp tp2
     Forall :: KnownTy t => Exp (t --> T) -> Exp T
     Exists :: KnownTy t => Exp (t --> T) -> Exp T
+    Not :: Exp T -> Exp T
     And :: Exp T -> Exp T -> Exp T
+    Or :: Exp T -> Exp T -> Exp T
     Implies :: Exp T -> Exp T -> Exp T
 
     EmptyAssign :: Exp G
@@ -73,7 +75,9 @@ typeOf (PiR p) =
       PairRepr _ t -> t
 typeOf (Forall _) = tt
 typeOf (Exists _) = tt
+typeOf (Not _) = tt
 typeOf (And _ _) = tt
+typeOf (Or _ _) = tt
 typeOf (EmptyAssign) = gg
 typeOf (Push _ _) = gg
 typeOf (Get _ _) = ee
@@ -88,7 +92,9 @@ freshNames (PiL p) = freshNames p
 freshNames (PiR p) = freshNames p
 freshNames (Forall p) = freshNames p
 freshNames (Exists p) = freshNames p
+freshNames (Not p) = freshNames p
 freshNames (And p p') = varStream_intersect (freshNames p) (freshNames p')
+freshNames (Or p p') = varStream_intersect (freshNames p) (freshNames p')
 freshNames (Implies p p') = varStream_intersect (freshNames p) (freshNames p')
 freshNames (EmptyAssign) = varStreams
 freshNames (Push p p') = varStream_intersect (freshNames p) (freshNames p')
@@ -121,10 +127,12 @@ ppExp (PiR p) used = (ppExp p used) ++ "#2"
 ppExp (Forall f) used = "∀" ++ x ++ ". [" ++ (ppExp (simpl $ App f (Var x xt)) (x : used)) ++ "]"
     where x = freshName f xt used
           xt = knownRepr
+ppExp (Not f) used = "¬" ++ ppExp f used
 ppExp (Exists f) used = "∃" ++ x ++ ". [" ++ (ppExp (simpl $ App f (Var x xt)) (x : used)) ++ "]"
     where x = freshName f xt used
           xt = knownRepr
 ppExp (And x y) used = "(" ++ (ppExp x used) ++ " /\\ " ++ (ppExp y used) ++ ")"
+ppExp (Or x y) used = "(" ++ (ppExp x used) ++ " \\/ " ++ (ppExp y used) ++ ")"
 ppExp (Implies x y) used = "(" ++ (ppExp x used) ++ " => " ++ (ppExp y used) ++ ")"
 ppExp (EmptyAssign) used = "g"
 ppExp (Push e g) used = "(" ++ (ppExp e used) ++ ": " ++ (ppExp g used) ++ ")"
@@ -198,8 +206,14 @@ simpl (Lam f) =
     Lam  (\x -> simpl (f x))
 simpl (Forall f) =
     Forall (simpl f)
+simpl (Exists f) =
+    Exists (simpl f)
+simpl (Not f) =
+    Not (simpl f)
 simpl (And x y) =
     And (simpl x) (simpl y)
+simpl (Or x y) =
+    Or (simpl x) (simpl y)
 simpl (Implies x y) =
     Implies (simpl x) (simpl y)
 simpl (Get i g) =
