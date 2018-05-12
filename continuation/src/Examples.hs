@@ -10,6 +10,12 @@ import Control.Monad.Reader
 import Control.Monad.Cont
 
 
+(!) :: Int -> [a] -> Maybe a
+0 ! (x : xs) = Just x
+0 ! [] = Nothing
+i ! [] = Nothing
+i ! (x : xs) = (i-1) ! xs
+
 curWorld :: MonadReader (Exp S) m => m (Exp S)
 curWorld = ask
 
@@ -22,12 +28,13 @@ truth = return $ Const "true" knownRepr
 he :: Int -> M E
 he i = do
     g <- get
-    return $ Get i g
+    case (i ! g) of
+      Just e -> return e
+      Nothing -> return $ Const ("g("++(show i) ++ ")") ERepr
 
 his :: Int -> (M E -> M E) -> M E
 his i f = do
-    g <- get
-    f (return $ Get i g)
+    f (he i)
 
 mother :: M E -> M E
 mother x =
@@ -38,10 +45,10 @@ called x y =
     ((App (Const "called" knownRepr)) <$> curWorld) <**> x <**> y
 
 
-push :: MonadState (Exp G) m => Exp E -> m ()
+push :: MonadState [Exp E] m => Exp E -> m ()
 push e = do
     g <- get
-    put $ Push e g
+    put $ e : g
 
 person :: M E -> M T
 person mx = do

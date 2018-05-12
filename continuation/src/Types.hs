@@ -3,15 +3,15 @@ import Data.Parameterized.Classes
 
 import Data.Type.Equality
 
-data Ty = E | S | T | G | Arrow Ty Ty | Pair Ty Ty
+data Ty = E | S | T | Arrow Ty Ty | Pair Ty Ty | List Ty
     deriving (Eq, Show)
 
 type E = 'E
 type T = 'T
 type S = 'S
-type G = 'G
 type Arrow = 'Arrow
 type Pair = 'Pair
+type List = 'List
 
 infixr 1 -->
 type (-->) = Arrow
@@ -23,23 +23,22 @@ data TyRepr (t :: Ty) where
     ERepr :: TyRepr E
     TRepr :: TyRepr T
     SRepr :: TyRepr S
-    GRepr :: TyRepr G
     ArrowRepr :: TyRepr t1 -> TyRepr t2 -> TyRepr (Arrow t1 t2)
     PairRepr :: TyRepr t1 -> TyRepr t2 -> TyRepr (Pair t1 t2)
+    ListRepr :: TyRepr t -> TyRepr (List t)
 
 
 instance Show (TyRepr t) where
     show ERepr = "E"
     show TRepr = "T"
     show SRepr = "S"
-    show GRepr = "G"
     show (ArrowRepr t1 t2) = "(" ++ (show t1) ++ " -> " ++ (show t2) ++ ")"
     show (PairRepr t1 t2) = (show t1) ++ " * " ++ (show t2)
+    show (ListRepr t1 ) = "[" ++ (show t1) ++ "]"
 
 ee = ERepr
 tt = TRepr
 ss = SRepr
-gg = GRepr
 
 infixr 1 ==>
 (==>) = ArrowRepr
@@ -48,9 +47,9 @@ infixr 1 ==>
 instance KnownRepr TyRepr E where knownRepr = ERepr
 instance KnownRepr TyRepr T where knownRepr = TRepr
 instance KnownRepr TyRepr S where knownRepr = SRepr
-instance KnownRepr TyRepr G where knownRepr = GRepr
 instance (KnownRepr TyRepr t, KnownRepr TyRepr t2) => KnownRepr TyRepr (t --> t2) where knownRepr = ArrowRepr knownRepr knownRepr
 instance (KnownRepr TyRepr t, KnownRepr TyRepr t2) => KnownRepr TyRepr (t ** t2) where knownRepr = PairRepr knownRepr knownRepr
+instance (KnownRepr TyRepr t) => KnownRepr TyRepr (List t) where knownRepr = ListRepr knownRepr
 
 type KnownTy t = KnownRepr TyRepr t
 
@@ -58,7 +57,9 @@ instance TestEquality TyRepr where
     testEquality ERepr ERepr = Just Refl
     testEquality TRepr TRepr = Just Refl
     testEquality SRepr SRepr = Just Refl
-    testEquality GRepr GRepr = Just Refl
+    testEquality (ListRepr t) (ListRepr t') = do
+        Refl <- testEquality t t'
+        return Refl
     testEquality (PairRepr t1 t2) (PairRepr t1' t2') = do
         Refl <- testEquality t1 t1'
         Refl <- testEquality t2 t2'

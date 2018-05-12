@@ -14,6 +14,9 @@ main = do
   putStrLn "john left: "
   putStrLn $ print_lower john_left
 
+  putStrLn "he left: "
+  putStrLn $ print_lower $ left (he 0)
+
   putStrLn "john admires everyone: "
   putStrLn $ print_lower john_admires_everyone
 

@@ -34,10 +34,8 @@ data Exp (tp :: Ty) where
     And :: Exp T -> Exp T -> Exp T
     Or :: Exp T -> Exp T -> Exp T
     Implies :: Exp T -> Exp T -> Exp T
-
-    EmptyAssign :: Exp G
-    Push :: Exp E -> Exp G -> Exp G
-    Get :: Int -> Exp G -> Exp E
+    ListNil :: KnownTy t => Exp (List t)
+    ListCons :: Exp t -> Exp (List t) -> Exp (List t)
 
 
 type VarStream = ([String], [String], [String]) -- e and wildcard, s, functions
@@ -78,9 +76,8 @@ typeOf (Exists _) = tt
 typeOf (Not _) = tt
 typeOf (And _ _) = tt
 typeOf (Or _ _) = tt
-typeOf (EmptyAssign) = gg
-typeOf (Push _ _) = gg
-typeOf (Get _ _) = ee
+typeOf (ListNil) = knownRepr
+typeOf (ListCons _ t) = typeOf t
 
 freshNames :: Exp tp -> VarStream
 freshNames (Var x _) = varStream_filter (/= x) varStreams
@@ -96,9 +93,8 @@ freshNames (Not p) = freshNames p
 freshNames (And p p') = varStream_intersect (freshNames p) (freshNames p')
 freshNames (Or p p') = varStream_intersect (freshNames p) (freshNames p')
 freshNames (Implies p p') = varStream_intersect (freshNames p) (freshNames p')
-freshNames (EmptyAssign) = varStreams
-freshNames (Push p p') = varStream_intersect (freshNames p) (freshNames p')
-freshNames (Get _ p) = freshNames p
+freshNames ListNil = varStreams
+freshNames (ListCons p p') = varStream_intersect (freshNames p) (freshNames p') 
 
 
 freshName :: Exp tp -> TyRepr tp2 -> [String] -> String -- fresh name from E, at type T, given that I've also used used
@@ -134,9 +130,8 @@ ppExp (Exists f) used = "∃" ++ x ++ ". [" ++ (ppExp (simpl $ App f (Var x xt))
 ppExp (And x y) used = "(" ++ (ppExp x used) ++ " /\\ " ++ (ppExp y used) ++ ")"
 ppExp (Or x y) used = "(" ++ (ppExp x used) ++ " \\/ " ++ (ppExp y used) ++ ")"
 ppExp (Implies x y) used = "(" ++ (ppExp x used) ++ " => " ++ (ppExp y used) ++ ")"
-ppExp (EmptyAssign) used = "g"
-ppExp (Push e g) used = "(" ++ (ppExp e used) ++ ": " ++ (ppExp g used) ++ ")"
-ppExp (Get i g) used = (ppExp g used) ++ "[" ++ (show i) ++ "]"
+ppExp (ListNil) used = "nil"
+ppExp (ListCons h t) used = (ppExp h used) ++ " :: " ++ (ppExp t used)
 
 type family Conv t where
     Conv (Exp tp) = tp
@@ -146,6 +141,7 @@ type family Conv t where
     Conv (StateT t m t2) = Conv (t -> m (t2, t))
     Conv (ContT r m a) = Conv ((a -> m r) -> m r)
     Conv (t,t2) = ((Conv t) ** (Conv t2))
+    Conv [t] = List (Conv t)
 
 instance Show (Exp tp) where
     show e = ppExp e []
@@ -157,6 +153,18 @@ class ToExp t where
 instance ToExp (Exp tp) where
     toExp t = t
     fromExp t = t
+
+instance (ToExp t, KnownTy (Conv t)) => ToExp [t] where
+    toExp ls =
+        case ls of
+          [] -> ListNil
+          x:xs -> ListCons (toExp x) (toExp xs)
+
+    fromExp e =
+        case e of
+          ListNil -> []
+          ListCons h t ->
+              (fromExp h) : (fromExp t)
 
 instance (ToExp t, ToExp t2) => ToExp (t,t2) where
     toExp p = Tup (toExp $ fst p) (toExp $ snd p)
@@ -174,9 +182,9 @@ instance (ToExp t, KnownTy tp, ToExp (m t)) => ToExp (ReaderT (Exp tp) m t) wher
     toExp ma = toExp $ runReaderT ma
     fromExp r = ReaderT $ \s -> fromExp $ App r s
 
-instance (ToExp t, KnownTy tp, ToExp (m (t, Exp tp))) => ToExp (StateT (Exp tp) m t) where
+instance (ToExp t, ToExp s, KnownTy tp, ToExp (m (t, s)), KnownTy (Conv s)) => ToExp (StateT s m t) where
     toExp ma = toExp $ runStateT ma
-    fromExp r = StateT $ \s -> fromExp $ App r s
+    fromExp r = StateT $ \s -> fromExp $ App r (toExp s)
 
 instance (KnownTy tp, ToExp t, ToExp (m (Exp tp)), KnownTy (Conv t), KnownTy (Conv (m (Exp tp)))) => ToExp (ContT (Exp tp) m t) where
     toExp ma = toExp $ runContT ma
@@ -184,17 +192,13 @@ instance (KnownTy tp, ToExp t, ToExp (m (Exp tp)), KnownTy (Conv t), KnownTy (Co
 
 type KnownM m t = (ToExp (m (Exp t)), KnownTy (Conv (m (Exp t))))
 
-type M a = ContT (Exp T) (ReaderT (Exp S) (State (Exp G))) (Exp a)
+type M a = ContT (Exp T) (ReaderT (Exp S) (State ([Exp E]))) (Exp a)
 
-runM :: Exp S -> Exp G -> M a -> (Exp a -> ReaderT (Exp S) (State (Exp G)) (Exp T)) -> Exp T
+runM :: Exp S -> [Exp E] -> M a -> (Exp a -> ReaderT (Exp S) (State ([Exp E])) (Exp T)) -> Exp T
 runM w g m k =
     evalState (runReaderT (runContT m k) w) g
              
 
-evalGet :: Int -> Exp G -> Maybe (Exp E)
-evalGet _ EmptyAssign = Nothing
-evalGet 0 (Push e _) = Just e
-evalGet i (Push _ g) = evalGet (i - 1) g
 
 
 simpl :: Exp t2 -> Exp t2
@@ -216,10 +220,6 @@ simpl (Or x y) =
     Or (simpl x) (simpl y)
 simpl (Implies x y) =
     Implies (simpl x) (simpl y)
-simpl (Get i g) =
-    case (evalGet i g) of
-      Just e -> simpl e
-      Nothing -> Get i g
 simpl (Tup x y) = Tup (simpl x) (simpl y)
 simpl (PiL t) =
     case simpl t of
@@ -229,15 +229,16 @@ simpl (PiR t) =
     case simpl t of
       Tup _ y -> simpl y
       _ -> PiR $ simpl t
+simpl (ListCons h t) =
+    ListCons (simpl h) (simpl t)
 
 simpl e = e
 
 print_lower :: M T -> String
 print_lower e = 
     show $ simpl $
-        
-        Lam $ \w ->
-            App (App (toExp $ runContT e return ) w) EmptyAssign
+            Lam $ \w ->
+                runM w [] e return
 
 
 
