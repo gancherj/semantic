@@ -17,6 +17,9 @@ main = do
   putStrLn "he left: "
   putStrLn $ print_lower $ left (he 0)
 
+  putStrLn "he left and do did everyone: "
+  putStrLn $ print_lower $ conj (left (he 0)) (so_does everyone)
+
   putStrLn "john admires everyone: "
   putStrLn $ print_lower john_admires_everyone
 
@@ -39,12 +42,11 @@ main = do
   putStrLn "john wonders if everyone admires someone: "
   putStrLn $ print_lower john_wonders_if_everyone_admires_someone
 
-  -- TODO This doesn't expose john as a referent correctly
   putStrLn "john wanted john to be asleep: "
   putStrLn $ print_lower john_wanted_john_to_be_asleep
 
-  putStrLn "john wanted john to be asleep and he is asleep"
-  putStrLn $ print_lower conj_sent
+  putStrLn "john wanted john to be asleep and he is asleep and so is everyone"
+  putStrLn $ print_lower $ conj conj_sent (so_does everyone)
 
   putStrLn "john or keisha admires someone"
   putStrLn $ print_lower disj_sent
@@ -54,3 +56,6 @@ main = do
 
   putStrLn "john or bill called his mother"
   putStrLn $ print_lower disj_sent2
+
+  putStrLn "so does everyone"
+  putStrLn $ print_lower $ so_does everyone

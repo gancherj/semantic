@@ -225,9 +225,15 @@ instance (KnownTy tp, ToExp t, ToExp (m (Exp tp)), KnownTy (Conv t), KnownTy (Co
 
 type KnownM m t = (ToExp (m (Exp t)), KnownTy (Conv (m (Exp t))))
 
-type M a = ContT (Exp T) (ReaderT (Exp S) (State ([Exp E]))) (Exp a)
 
-runM :: Exp S -> [Exp E] -> M a -> (Exp a -> ReaderT (Exp S) (State ([Exp E])) (Exp T)) -> Exp T
+data MS = MS {
+    _erefs :: [M E],
+    _etrefs :: [M E -> M T] }
+
+type Mon a = ContT (Exp T) (ReaderT (Exp S) (State MS)) a
+type M a = ContT (Exp T) (ReaderT (Exp S) (State MS)) (Exp a)
+
+runM :: Exp S -> MS -> M a -> (Exp a -> ReaderT (Exp S) (State MS) (Exp T)) -> Exp T
 runM w g m k =
     evalState (runReaderT (runContT m k) w) g
              
@@ -271,7 +277,7 @@ print_lower :: M T -> String
 print_lower e = 
     show $ simpl $
             Lam $ \w ->
-                runM w [] e return
+                runM w (MS [] []) e return
 
 
 

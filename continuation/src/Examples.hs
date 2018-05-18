@@ -25,12 +25,20 @@ curWorld = ask
 truth :: Monad m => m (Exp T)
 truth = return $ Const "true" knownRepr
 
+
+getDref :: Int -> Mon (M E -> M T)
+getDref i = do
+    (MS _ fs) <- get
+    case (i ! fs) of
+      Just f -> return f 
+      Nothing -> return $ \e -> mkVerb1 ("g_et(" ++ (show i) ++ ")") e
+
 he :: Int -> M E
 he i = do
-    g <- get
+    (MS g _) <- get
     case (i ! g) of
-      Just e -> return e
-      Nothing -> return $ Const ("g("++(show i) ++ ")") ERepr
+      Just e -> e
+      Nothing -> return $ Const ("g_e (" ++ (show i) ++ ")") ERepr
 
 his :: Int -> (M E -> M E) -> M E
 his i f = do
@@ -44,11 +52,15 @@ called :: M E -> M E -> M T
 called x y =
     ((App (Const "called" knownRepr)) <$> curWorld) <**> x <**> y
 
+push_e :: MonadState MS m => M E -> m ()
+push_e me = do
+    ms <- get
+    put $ ms { _erefs = (me : (_erefs ms)) }
 
-push :: MonadState [Exp E] m => Exp E -> m ()
-push e = do
-    g <- get
-    put $ e : g
+push_et :: MonadState MS m => (M E -> M T) -> m ()
+push_et mt = do
+    ms <- get
+    put $ ms { _etrefs = (mt : (_etrefs ms)) }
 
 person :: M E -> M T
 person mx = do
@@ -77,13 +89,6 @@ noone =
         return $ Not t
 
 
-substWorld :: M a -> Exp S -> M a
-substWorld m w = 
-    ContT $ \f -> 
-        ReaderT $ \_ ->
-            runReaderT (runContT m f) w
-
-
 bdi :: M (S --> E --> S --> T) -> M E -> M T -> M T
 bdi m mx t = do
     f <- m
@@ -94,8 +99,6 @@ bdi m mx t = do
         return $ Forall $ Lam $ \v ->
             Implies (App (App (App f w) x) v)
                     (runM v g t k)
-                    
-                    
 
 believe = bdi (return (Const "believe" knownRepr))
 know = bdi (return (Const "know" knownRepr))
@@ -103,8 +106,19 @@ want = bdi (return $ Const "want" knownRepr)
 desire = bdi (return (Const "desire" knownRepr))
 
 wonders_if :: M E -> M T -> M T
-wonders_if x t =
+wonders_if x t = do
+    push_et $ \e -> want e (know e t)
     want x (know x t)
+
+believes' :: M T -> M E -> M T
+believes' mt = mkVerbFrom (go mt)
+    where
+        go :: M T -> Exp (S --> E --> T)
+        go mt = error "unimp"
+
+
+
+
 
 some :: M E
 some = do
@@ -123,26 +137,57 @@ someone =
         return $ Exists $ Lam $ \e -> And (t2 e) (t1 e)
 
 admire :: M E -> M E -> M T
-admire x y =
-    ((App (Const "admire" knownRepr)) <$> curWorld) <**> x <**> y
+admire = mkVerb2 "admire"
 
 asleep :: M E -> M T
-asleep x =
-    ((App (Const "asleep" knownRepr)) <$> curWorld) <**> x
+asleep = mkVerb1 "asleep"
 
 
 left :: M E -> M T
-left x = 
-    ((App (Const "left" knownRepr)) <$> curWorld) <**> x
+left = mkVerb1 "left"
 
 to_be :: M T -> M T
 to_be = id
+
+
+mkVerbFrom :: Exp (S --> E --> T) -> M E -> M T
+mkVerbFrom v agent = do
+    s <- curWorld
+    let t = App v s
+    push_et $ \e -> (fromExp t) <$> e
+    e <- agent
+    return $ App t e
+
+mkVerb1 :: String -> M E -> M T
+mkVerb1 name agent = do
+    s <- curWorld
+    let t = App (Const name (ss ==> ee ==> tt)) s
+    push_et $ \e -> (fromExp t) <$> e
+    e <- agent
+    return $ App t e
+
+
+eflip :: (KnownTy a, KnownTy b) => Exp (a --> b --> c) -> Exp (b --> a --> c)
+eflip f =
+    Lam $ \a -> Lam $ \b -> App (App f b) a
+
+mkVerb2 :: String -> M E -> M E -> M T
+mkVerb2 name agent theme = do
+    s <- curWorld
+    let verb a t = App (App (App (Const name knownRepr) s) a) t
+    push_et $ \ma -> do
+        a <- ma
+        t <- theme
+        return $ verb a t
+    a <- agent
+    t <- theme
+    return $ verb a t
 
 mkE :: String -> M E
 mkE s = do
     w <- curWorld
     let j = App (Const s (ss ==> ee)) w
-    push j
+    push_e $ return j
     return j
 
 john = mkE "john"
@@ -152,6 +197,7 @@ keisha = mkE "keisha"
 everyone_left :: M T
 everyone_left = 
     left everyone
+
 
 john_wanted_john_to_be_asleep :: M T
 john_wanted_john_to_be_asleep =  want john (asleep john)
@@ -227,3 +273,11 @@ disj_sent3 =
 disj_sent2 :: M T
 disj_sent2 =
     called (disj john bill) (his 0 mother)
+
+so_does :: M E -> M T
+so_does e = do
+    f <- getDref 0
+    f e
+
+
+
