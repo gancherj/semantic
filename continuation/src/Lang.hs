@@ -2,6 +2,8 @@
 -- For this approach to be sound, I need to verify that Cont (Reader (State)) really is a monad.
 --
 --
+
+
 module Lang where
 
 import Control.Monad.Reader
@@ -105,33 +107,66 @@ freshName e t used =
       SRepr -> head $ take 1 $ y
       _ -> head $ take 1 $ x
 
--- list argument keeps track of names used
--- TODO make a better printer for this.
-ppExp :: Exp tp -> [String] -> String
-ppExp (Var x _) _ = x
-ppExp (Const x _) _ = x
-ppExp e@(Lam f) used =
-    "λ " ++ x  
-    -- ++ ": " ++ (show t) 
-    ++ ". " ++ (ppExp (f (Var x xt)) (x : used))
+
+
+paren :: Bool -> String -> String
+paren b s = if b then "(" ++ s ++ ")" else s
+
+prec :: Exp tp -> Int
+prec e = case e of
+ Lam _ -> 1
+ Forall _ -> 1
+ Exists _ -> 1
+ Implies _ _ -> 2
+ Or _ _ -> 2
+ And _ _ -> 3
+ Not _ -> 4
+ PiL _ -> 5
+ PiR _ -> 5
+ Tup _ _ -> 6
+ ListNil -> 8
+ ListCons _ _ -> 9
+ App _ _ -> 9
+ Var _ _ -> 10 
+ Const _ _ -> 10 
+
+ppExp :: Exp tp -> [String] -> Int -> String
+ppExp e used p = 
+    let n = prec e in
+    paren (p > n) $
+    case e of
+      Var x _ -> x
+      Const x _ -> x
+      Lam f ->
+        "λ " ++ x  
+        ++ ". " ++ (ppExp (f (Var x xt)) (x : used) (n))
         where x = freshName e xt used
               xt = knownRepr
-ppExp (App f e) used = "(" ++ (ppExp f used) ++ ") (" ++ (ppExp e used) ++ ")"
-ppExp (Tup p1 p2) used = "(" ++ (ppExp p1 used) ++ ", " ++ (ppExp p2 used) ++ ")"
-ppExp (PiL p) used = (ppExp p used) ++ "#1"
-ppExp (PiR p) used = (ppExp p used) ++ "#2"
-ppExp (Forall f) used = "∀" ++ x ++ ". [" ++ (ppExp (simpl $ App f (Var x xt)) (x : used)) ++ "]"
-    where x = freshName f xt used
-          xt = knownRepr
-ppExp (Not f) used = "¬" ++ ppExp f used
-ppExp (Exists f) used = "∃" ++ x ++ ". [" ++ (ppExp (simpl $ App f (Var x xt)) (x : used)) ++ "]"
-    where x = freshName f xt used
-          xt = knownRepr
-ppExp (And x y) used = "(" ++ (ppExp x used) ++ " /\\ " ++ (ppExp y used) ++ ")"
-ppExp (Or x y) used = "(" ++ (ppExp x used) ++ " \\/ " ++ (ppExp y used) ++ ")"
-ppExp (Implies x y) used = "(" ++ (ppExp x used) ++ " => " ++ (ppExp y used) ++ ")"
-ppExp (ListNil) used = "nil"
-ppExp (ListCons h t) used = (ppExp h used) ++ " :: " ++ (ppExp t used)
+      App f e ->
+          (ppExp f used (n)) ++ " " ++ (ppExp e used (n + 1))
+      Tup p1 p2 ->
+          "(" ++ (ppExp p1 used (n + 1)) ++ "," ++ (ppExp e used (n + 1)) ++ ")"
+      PiL e -> ppExp e used (n + 1) ++ "#1"
+      PiR e -> ppExp e used (n + 1) ++ "#2"
+      Forall f ->
+          "∀" ++ x ++ ". " ++ (ppExp (simpl $ App f (Var x xt)) (x : used) (n + 1)) 
+            where x = freshName f xt used
+                  xt = knownRepr
+      Exists f ->
+          "∃" ++ x ++ ". " ++ (ppExp (simpl $ App f (Var x xt)) (x : used) (n + 1)) 
+            where x = freshName f xt used
+                  xt = knownRepr
+      Not f -> "¬" ++ ppExp f used (n + 1)
+      And x y -> (ppExp x used (n + 1)) ++ " /\\ " ++ (ppExp y used n)
+      Or x y -> (ppExp x used (n + 1)) ++ " \\/ " ++ (ppExp y used n)
+      Implies x y -> (ppExp x used (n + 1)) ++ " => " ++ (ppExp y used n)
+      ListNil -> "nil"
+      ListCons h t -> (ppExp h used (n + 1)) ++ " :: " ++ (ppExp t used (n + 1))
+
+
+instance Show (Exp tp) where
+    show e = ppExp e [] 1
+
 
 type family Conv t where
     Conv (Exp tp) = tp
@@ -143,8 +178,6 @@ type family Conv t where
     Conv (t,t2) = ((Conv t) ** (Conv t2))
     Conv [t] = List (Conv t)
 
-instance Show (Exp tp) where
-    show e = ppExp e []
 
 class ToExp t where
     toExp :: t -> Exp (Conv t)
