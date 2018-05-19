@@ -22,7 +22,6 @@ tr s =
 
 
 data Exp (tp :: Ty) where
-    -- only for printing
     Var :: String -> TyRepr tp -> Exp tp
     Tup :: Exp tp -> Exp tp2 -> Exp (tp ** tp2)
     PiL :: Exp (tp ** tp2) -> Exp tp

@@ -1,0 +1,128 @@
+\documentclass{article}
+\usepackage{listings}
+\usepackage{stmaryrd}
+\usepackage{amsmath, amssymb}
+\usepackage{courier}
+\usepackage{qtree}
+
+\newcommand{\Te}{\textsf{e}}
+\newcommand{\Tt}{\textsf{t}}
+\newcommand{\Ts}{\textsf{s}}
+\newcommand{\sem}[1]{$\llbracket \text{#1} \rrbracket$}
+
+\lstset{language=Haskell, basicstyle=\footnotesize\ttfamily}
+
+\begin{document}
+\title{Implementing Continuation Semantics with Monadic Effects}
+\author{Joshua Gancher}
+
+\maketitle
+\abstract{
+    We present a Haskell library for computing semantic derivations using a monadic framework of continuations, with support for additional monadic effects.  
+
+}
+
+\section{Overview of Theory}
+\label{sec:theory}
+
+Our starting-off point is the semantic framework of \emph{monadic continuations}, as described by Charlow \cite{charlow2014semantics}. In this framework, we do not work with base types (typically \Te and \Tt) directly, but instead work with \emph{computations returning base types}. Our computations will be of the form $(\sigma \to N\ \Tt) \to N\ \Tt$, where $N$ is a monad which may encode various side-effects. This type will be abbreviated $M \sigma$. It turns out that $M$ has the structure of a \emph{monad transformer}, so is itself a monad. 
+
+In our library, verbs are functions from computations to computations. Thus, in the following situation:
+\[ \Tree [.S [.NP John ] [.VP [.V admires ] [.NP everybody ] ] ] \]
+``John'' and ``everybody'' \emph{both} have semantic type $M \Te$, and ``admires'' has semantic type $M \Te \to M \Te \to M \Te$. By arranging our types this way, we may compute semantic values just as before, by using functional application. All non-local phenomena is handled within the monad $M$.
+
+Our semantic framework is parameterized by the choice of inner monad $N$. Recall that any monad $N$ supports the following operations:
+\begin{itemize}
+    \item \textsf{return}$: \forall \alpha.\ \alpha \to N \alpha$
+    \item \textsf{bind}$: \forall \alpha \beta.\ N \alpha \to (\alpha \to N \beta) \to N \beta$.
+\end{itemize}
+
+An example inner monad would be the \emph{Reader} monad, which models intensionality. The Reader monad maps a type $\sigma$ to the type $\Ts \to \sigma$. The \textsf{return} function for the monad, on input $x$, returns the constant function $\lambda w.\ x$. The \textsf{bind} function, on input $c$ and $f$, returns the function $\lambda w.\ (f\ (c\ w))\ w$; that is, it applies the world variable to $c$, applies the result to $f$, and applies the world variable again to $f$'s result. Note that the reader monad induces a nontrivial operation, $\textsf{get}$ of type $\Ts \to \Ts$, which returns the current world variable.
+
+Given an inner monad, we derive a monad structure on $M$, the outer monad, defined to be:
+\begin{itemize}
+    \item $\textsf{return}\ x\ k := k x$ and
+    \item $\textsf{bind}\ c\ f\ k := c\ (\lambda x.\ (f\ x) k).$
+\end{itemize}
+
+That is, \textsf{return} takes a value and passes it to the continuation, while \textsf{bind} runs the first computation with the continuation that, on input $x$, feeds $x$ into $f$ and runs that computation on the present continuation $k$. Since $M$ is a monad transformer, it also admits a \emph{lifting} operator $\cdot^\sharp$, which turns a computation in the inner monad, $N$, to the outer monad, $M$. This is done by use of the $\textsf{bind}$ operation of the underlying monad. Thus, when $N$ is the reader monad, we receive the operation $\textsf{get}^\sharp$ of type $M \Ts$.
+
+Given the above setup, we can give a semantic interpretation to the above sentence, using the Reader monad:
+\begin{align*}
+    \llbracket \text{John} \rrbracket &:= \textsf{bind}_M\ \textsf{get}^\sharp (\lambda w.\ \textsf{return}\ (\mathbf{j}\ w)) \\
+    \llbracket \text{everybody} \rrbracket &:= \lambda k.\ \textsf{bind}_N\ \textsf{get} (\lambda w.\ \forall x.\ \mathbf{person}\ w\ x \implies (k\ x) w)) \\
+    \llbracket \text{admires} \rrbracket &:= \lambda c_1 c_2.\ \textsf{bind}_M\ \textsf{get}^\sharp (\lambda w.\ \textsf{bind}_M\ c_1 (\lambda x.\ \textsf{bind}_M\ c_2\ (\lambda y.\ \textsf{return}\ (\mathbf{admires}\ w\ x\ y))))
+\end{align*}
+
+Above, \sem{John} receives the current world, $w$, and returns $\mathbf{j}\ w$ to the current continuation. Thus, the semantics of names can be world dependent. The semantic value \sem{everybody} takes in the current continuation explicitly as well as the current world variable $w$, and first applies $x$ to $k$. This results in a value of type $N \Tt$, which means it is waiting for a world variable. Thus, we apply $w$ to the result. Furthermore, we may restrict the domain of quanification using $w$, to require that $x$ is a person in the current world. Finally, \sem{admires} takes in the current world $w$, binds the two argument continuations, and returns the result of applying the current world and the two results to $\mathbf{admires}$.
+
+Once we have the above three parts, we can now construct the semantics of the total sentence
+$$ S = \llbracket \text{John admires everybody} \rrbracket = \llbracket \text{admires} \rrbracket\ \llbracket \text{John} \rrbracket\ \llbracket \text{everybody} \rrbracket$$
+which has type $M \Tt = (\Tt \to N \Tt) \to N \Tt$. At this point, we may apply \textsf{return} to $S$ to receive a value of type $N \Tt$. This value we can then interpret as an ordinary lambda term, which will calculate to
+$$\llbracket \text{John admires everybody} \rrbracket = \lambda w.\ \forall x.\ \textbf{person}\ w\ x \implies \mathbf{admire}\ w\ (\mathbf{j}\ w)\ x.$$
+
+In the next section, we outline the implementation of the computational system, which is able to automatically derivations such as the one above. The computational system is currently extended to use a monad $N$ which handles intensionality as well as discourse referents. (A refined implementation would use a system of algebraic effects for $N$, which would mean the innner monad can be completely parameterized throughout the implementation.)
+
+\section{Overview of Implementation}
+
+We begin with an embedded lambda calculus, given in higher order abstract syntax:
+\begin{lstlisting}
+data Exp (tp :: Ty) where
+    Var :: String -> TyRepr tp -> Exp tp
+    Const :: String -> TyRepr tp -> Exp tp
+
+    -- tuple constructors / destructors
+    Tup :: Exp tp -> Exp tp2 -> Exp (tp ** tp2)
+    PiL :: Exp (tp ** tp2) -> Exp tp
+    PiR :: Exp (tp ** tp2) -> Exp tp2
+
+    Lam :: KnownTy tp => (Exp tp -> Exp tp2) -> Exp (tp ->> tp2)
+    App :: Exp (tp ->> tp2) -> Exp tp -> Exp tp2
+
+    -- logical operators
+    Forall :: KnownTy t => Exp (t ->> T) -> Exp T
+    Exists :: KnownTy t => Exp (t ->> T) -> Exp T
+    Not :: Exp T -> Exp T
+    And :: Exp T -> Exp T -> Exp T
+    Or :: Exp T -> Exp T -> Exp T
+    Implies :: Exp T -> Exp T -> Exp T
+
+    -- list constructors / destructors
+    ListNil :: KnownTy t => Exp (List t)
+    ListCons :: Exp t -> Exp (List t) -> Exp (List t)
+\end{lstlisting}
+
+Our entire computational system will be based on the above core language. Above, \verb|Ty| comes from the grammar
+\[ \tau := \Ts \mid \Te \mid \Tt \mid \tau **\ \tau \mid \tau\ \verb|->>|\ \tau \mid \textsf{List}\ \tau,\]
+where $\tau **\ \tau$ is the type constructor for tuples, and $\tau\ \verb|->>|\ \tau$ is the type constructor for functions.
+
+Note above that we do \emph{not} embed any monadic notions in our core language. Instead, we use the monadic constructs of Haskell directly. For instance, the Reader monad from Section \ref{sec:theory} is modeled as \verb|Reader (Exp T)|, where \verb|Reader| is the Reader monad in Haskell. By doing so, we can implement the monad $M$ from above as follows:
+
+\begin{lstlisting}
+data MS = MS {
+    _erefs :: [Exp E],
+    _etrefs :: [Exp E -> M T] }
+
+type M a = ContT (Exp T) (ReaderT (Exp S) (State MS)) (Exp a)
+\end{lstlisting}
+
+Here, the inner monad $N$ is \verb|ReaderT (Exp S) (State MS)|, and the outer monad is \verb|ContT (Exp T) N|. This inner monad models three things:
+\begin{enumerate}
+    \item Intensionality, using a reader monad,
+    \item Anaphora, using a state monad with the field \verb|_erefs|, and
+    \item Higher order discourse referents, using the same state monad with the field \verb|_etrefs|.
+\end{enumerate}
+
+Anaphora and drefs are modeled by a stack of values, represented as a list. Higher order discourse referents can be used to model sentences such as ``John wishes [himself] to be an actor, and so does Keisha [for herself]'', which can be computed to have semantic value
+$$ \lambda w.\ (\forall v.\ \mathbf{want}\ w\ (\mathbf{j}\ w)\ v \implies \mathbf{actor}\ v\ (\textbf{j}\ w))\ \wedge\ 
+               (\forall v.\ \mathbf{want}\ w\ (\mathbf{k}\ w)\ v \implies \mathbf{actor}\ v\ (\textbf{k}\ w)). $$
+(TODO: should I change it so I get $\mathbf{actor}\ v\ (\textbf{j}\ v)$?)
+               
+
+
+
+
+\bibliographystyle{plain}
+\bibliography{main}
+
+\end{document}

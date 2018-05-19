@@ -59,3 +59,9 @@ main = do
 
   putStrLn "so does everyone"
   putStrLn $ print_lower $ so_does everyone
+
+  putStrLn "john wants to be an actor"
+  putStrLn $ print_lower $ john_wants_actor
+
+  putStrLn "john wants to be an actor and so does keisha"
+  putStrLn $ print_lower $ conj john_wants_actor (so_does keisha)

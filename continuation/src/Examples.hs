@@ -106,15 +106,20 @@ bdi m mx t = do
             Implies (App (App (App f w) x) v)
                     (runM v g t k)
 
-believe = bdi (return (Const "believe" knownRepr))
-know = bdi (return (Const "know" knownRepr))
-want = bdi (return $ Const "want" knownRepr) 
-desire = bdi (return (Const "desire" knownRepr))
+believe' = bdi (return (Const "believe" knownRepr))
+know' = bdi (return (Const "know" knownRepr))
+want' = bdi (return $ Const "want" knownRepr) 
+desire' = bdi (return (Const "desire" knownRepr))
+
+want :: M E -> M T -> M T
+want x t = do
+    push_et $ \e -> want' (return e) t
+    want' x t
 
 wonders_if :: M E -> M T -> M T
 wonders_if x t = do
-    push_et $ \e -> want (return e) (know (return e) t)
-    want x (know x t)
+    push_et $ \e -> want' (return e) (know' (return e) t)
+    want' x (know' x t)
 
 believes' :: M T -> M E -> M T
 believes' mt = mkVerbFrom (go mt)
@@ -147,6 +152,9 @@ admire = mkVerb2 "admire"
 
 asleep :: M E -> M T
 asleep = mkVerb1 "asleep"
+
+actor :: M E -> M T
+actor = mkVerb1 "actor"
 
 
 left :: M E -> M T
@@ -284,4 +292,7 @@ so_does me = do
     me >>= f
 
 
+john_wants_actor :: M T
+john_wants_actor =
+    want john (actor (he 0))
 
