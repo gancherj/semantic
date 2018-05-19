@@ -38,9 +38,9 @@ main = do
   putStrLn "john wonders if True: "
   putStrLn $ print_lower john_wonders_if_true
 
-
-  putStrLn "john wonders if everyone admires someone: "
-  putStrLn $ print_lower john_wonders_if_everyone_admires_someone
+  -- TODO this gives the wrong reading, because each BDI forms a separate verb.
+  putStrLn "john wonders if everyone admires someone and so does keisha: "
+  putStrLn $ print_lower $ conj john_wonders_if_everyone_admires_someone (so_does keisha)
 
   putStrLn "john wanted john to be asleep: "
   putStrLn $ print_lower john_wanted_john_to_be_asleep

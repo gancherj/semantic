@@ -26,18 +26,19 @@ truth :: Monad m => m (Exp T)
 truth = return $ Const "true" knownRepr
 
 
-getDref :: Int -> Mon (M E -> M T)
+getDref :: Int -> Mon (Exp E -> M T)
 getDref i = do
     (MS _ fs) <- get
     case (i ! fs) of
-      Just f -> return f 
-      Nothing -> return $ \e -> mkVerb1 ("g_et(" ++ (show i) ++ ")") e
+      Just f -> return f
+      Nothing -> return $ \e -> return $
+          App (Const ("g_et(" ++ (show i) ++ ")") knownRepr) e
 
 he :: Int -> M E
 he i = do
     (MS g _) <- get
     case (i ! g) of
-      Just e -> e
+      Just e -> return e
       Nothing -> return $ Const ("g_e (" ++ (show i) ++ ")") ERepr
 
 his :: Int -> (M E -> M E) -> M E
@@ -52,15 +53,15 @@ called :: M E -> M E -> M T
 called x y =
     ((App (Const "called" knownRepr)) <$> curWorld) <**> x <**> y
 
-push_e :: MonadState MS m => M E -> m ()
-push_e me = do
+push_e :: MonadState MS m => Exp E -> m ()
+push_e e = do
     ms <- get
-    put $ ms { _erefs = (me : (_erefs ms)) }
+    put $ ms { _erefs = (e : (_erefs ms)) }
 
-push_et :: MonadState MS m => (M E -> M T) -> m ()
-push_et mt = do
+push_et :: MonadState MS m => (Exp E -> M T) -> m ()
+push_et et = do
     ms <- get
-    put $ ms { _etrefs = (mt : (_etrefs ms)) }
+    put $ ms { _etrefs = (et : (_etrefs ms)) }
 
 person :: M E -> M T
 person mx = do
@@ -96,6 +97,11 @@ bdi m mx t = do
     ContT $ \k -> do
         g <- get
         w <- ask
+--        if topush then 
+--                  push_et $ \e -> Forall $ Lam $ \v ->
+--                      Implies (App (App (App f w) e) v)
+--                              (runM v g t k)
+--                  else return ()
         return $ Forall $ Lam $ \v ->
             Implies (App (App (App f w) x) v)
                     (runM v g t k)
@@ -107,7 +113,7 @@ desire = bdi (return (Const "desire" knownRepr))
 
 wonders_if :: M E -> M T -> M T
 wonders_if x t = do
-    push_et $ \e -> want e (know e t)
+    push_et $ \e -> want (return e) (know (return e) t)
     want x (know x t)
 
 believes' :: M T -> M E -> M T
@@ -154,7 +160,7 @@ mkVerbFrom :: Exp (S --> E --> T) -> M E -> M T
 mkVerbFrom v agent = do
     s <- curWorld
     let t = App v s
-    push_et $ \e -> (fromExp t) <$> e
+    push_et $ \e -> return $ App t e
     e <- agent
     return $ App t e
 
@@ -162,7 +168,7 @@ mkVerb1 :: String -> M E -> M T
 mkVerb1 name agent = do
     s <- curWorld
     let t = App (Const name (ss ==> ee ==> tt)) s
-    push_et $ \e -> (fromExp t) <$> e
+    push_et $ \e -> return $ App t e
     e <- agent
     return $ App t e
 
@@ -175,19 +181,17 @@ mkVerb2 :: String -> M E -> M E -> M T
 mkVerb2 name agent theme = do
     s <- curWorld
     let verb a t = App (App (App (Const name knownRepr) s) a) t
-    push_et $ \ma -> do
-        a <- ma
-        t <- theme
-        return $ verb a t
+    -- NOTE: Order here matters. The agent must be bound first.
     a <- agent
     t <- theme
+    push_et $ \a -> return $ verb a t
     return $ verb a t
 
 mkE :: String -> M E
 mkE s = do
     w <- curWorld
     let j = App (Const s (ss ==> ee)) w
-    push_e $ return j
+    push_e $ j
     return j
 
 john = mkE "john"
@@ -275,9 +279,9 @@ disj_sent2 =
     called (disj john bill) (his 0 mother)
 
 so_does :: M E -> M T
-so_does e = do
+so_does me = do
     f <- getDref 0
-    f e
+    me >>= f
 
 
 
