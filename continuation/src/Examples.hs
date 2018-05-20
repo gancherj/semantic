@@ -38,7 +38,7 @@ he :: Int -> M E
 he i = do
     (MS g _) <- get
     case (i ! g) of
-      Just e -> return e
+      Just e -> e
       Nothing -> return $ Const ("g_e (" ++ (show i) ++ ")") ERepr
 
 his :: Int -> (M E -> M E) -> M E
@@ -53,7 +53,7 @@ called :: M E -> M E -> M T
 called x y =
     ((App (Const "called" knownRepr)) <$> curWorld) <**> x <**> y
 
-push_e :: MonadState MS m => Exp E -> m ()
+push_e :: MonadState MS m => M E -> m ()
 push_e e = do
     ms <- get
     put $ ms { _erefs = (e : (_erefs ms)) }
@@ -197,10 +197,11 @@ mkVerb2 name agent theme = do
 
 mkE :: String -> M E
 mkE s = do
-    w <- curWorld
-    let j = App (Const s (ss ==> ee)) w
+    let (j :: M E) = do
+                w <- curWorld
+                return $ App (Const s (ss ==> ee)) w
     push_e $ j
-    return j
+    j
 
 john = mkE "john"
 bill = mkE "bill"

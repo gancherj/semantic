@@ -226,7 +226,7 @@ type KnownM m t = (ToExp (m (Exp t)), KnownTy (Conv (m (Exp t))))
 
 
 data MS = MS {
-    _erefs :: [Exp E],
+    _erefs :: [M E],
     -- Note here the Kleisli arrow is actually necessary. An example is if the et has an embedded pronoun.
     _etrefs :: [Exp E -> M T] }
 
