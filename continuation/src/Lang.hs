@@ -236,8 +236,12 @@ type M a = ContT (Exp T) (ReaderT (Exp S) (State MS)) (Exp a)
 runM :: Exp S -> MS -> M a -> (Exp a -> ReaderT (Exp S) (State MS) (Exp T)) -> Exp T
 runM w g m k =
     evalState (runReaderT (runContT m k) w) g
-             
 
+runInner :: Exp S -> MS -> ReaderT (Exp S) (State MS) (Exp T) -> Exp T
+runInner w s m =
+    evalState (runReaderT m w) s
+
+lowerM w g m = runM w g m return
 
 
 simpl :: Exp t2 -> Exp t2

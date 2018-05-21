@@ -72,7 +72,23 @@ every = do
     ContT $ \k -> do
         s <- get
         w <- ask
-        return $ Forall $ Lam $ \e -> evalState (runReaderT (k e) w) s
+        return $ Forall $ Lam $ \x -> evalState (runReaderT (k x) w) s
+--
+-- every: (e -> t) -> t
+-- every = \k. forall x. k x
+--
+--
+-- every : (e -> N t) -> N t
+-- every : (e -> s -> [e] -> (t, [e])) -> s -> [e] -> (t, [e])
+-- every = \k. \w. \stack. forall x. (k x w stack)#1
+--
+--
+--
+-- id = \(x : e). x
+-- id : Exp (e --> e)
+--
+-- id = Lam $ \e -> e
+--
 
 everyone :: M E
 everyone = 
@@ -82,6 +98,8 @@ everyone =
         let t1 e = evalState (runReaderT (k e) w) s
             t2 e = runM w s (person (return e)) return
         return $ Forall $ Lam $ \e -> Implies (t2 e) (t1 e)
+
+
 
 noone :: M E
 noone =
@@ -129,23 +147,37 @@ believes' mt = mkVerbFrom (go mt)
 
 
 
+-- to encode : someone walked in; he sat down
+-- should have same semantics as someone walked in and sat down
+--
+--
+-- look at VP anaphora, propositional anaphora
 
+-- maybe exists has type (E -> M T) -> M T?
+--
+--
+-- todo: semantics of a sentence is actually a truth function of a "scene"; a sequence of events
+--
+-- encode indefinites as functions instead of a stack?
+--
+--
+-- viable grammar formalisms:
+--  -- categorial grammar (mark steedman)
+--  -- minimalist grammars
+--  -- want a grammar that can handle movement
+--
+--
 
-some :: M E
-some = do
-    ContT $ \k -> do
-        s <- get
-        w <- ask
-        return $ Exists $ Lam $ \e -> evalState (runReaderT (k e) w) s
 
 someone :: M E
-someone = 
+someone =
     ContT $ \k -> do
         s <- get
         w <- ask
         let t1 e = evalState (runReaderT (k e) w) s
             t2 e = runM w s (person (return e)) return
         return $ Exists $ Lam $ \e -> And (t2 e) (t1 e)
+       
 
 admire :: M E -> M E -> M T
 admire = mkVerb2 "admire"
@@ -266,9 +298,13 @@ disj t1 t2 =
         t2 <- runContT t2 k
         return $ Or t1 t2
 
-is_such_that :: M a -> (M a -> M T) -> M T
+-- x or y = \k . (x k) or (x y)
+--
+
+is_such_that :: M E -> (M E -> M T) -> M T
 is_such_that ma f = do
     x <- ma
+    push_e (return x)
     f (return x)
 
 conj_sent :: M T

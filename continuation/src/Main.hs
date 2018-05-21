@@ -11,14 +11,21 @@ main = do
   putStrLn "everyone left: "
   putStrLn $ print_lower everyone_left
 
-  putStrLn "john left: "
-  putStrLn $ print_lower john_left
 
   putStrLn "he left: "
   putStrLn $ print_lower $ left (he 0)
 
   putStrLn "he left and do did everyone: "
   putStrLn $ print_lower $ conj (left (he 0)) (so_does everyone)
+
+  putStrLn "someone left and is asleep"
+  putStrLn $ print_lower $ conj (left someone) (asleep (he 0))
+
+  putStrLn "someone left and is asleep"
+  putStrLn $ print_lower $ is_such_that someone $ \x -> conj (left (he 0)) (asleep (he 0))
+
+  putStrLn "john left and is asleep: "
+  putStrLn $ print_lower $ conj (left john) (asleep (he 0))
 
   putStrLn "john admires everyone: "
   putStrLn $ print_lower john_admires_everyone
